@@ -7,6 +7,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { useQueryClient } from "@tanstack/react-query";
 import { IconArrowUpRight, IconBook2, IconCheck, IconChevronRight, IconClock, IconEye, IconLayoutDashboard, IconLogout2, IconMessageCircle, IconPencil, IconPlus, IconSearch, IconUsers, IconX } from "@tabler/icons-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
@@ -47,6 +48,7 @@ export default function HomeRoute() {
   const [tags, setTags] = useState("");
   const [schedule, setSchedule] = useState("");
   const [error, setError] = useState("");
+  const queryClient = useQueryClient();
   const canEdit = profile?.role === "editor" || profile?.role === "admin";
   useEffect(() => { if (profile) setTab("workspace"); }, [profile]);
   const createPost = useActionMutation("create-post");
@@ -70,24 +72,32 @@ export default function HomeRoute() {
     if (post.status !== "draft") return;
     setActive(post); setTitle(post.title); setMarkdown(post.markdown); setTags(post.tags); setError(""); setEditing(true);
   }
+  async function refreshPosts() {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["action", "list-posts"] }),
+      queryClient.invalidateQueries({ queryKey: ["action", "list-public-posts"] }),
+    ]);
+  }
   async function saveDraft() {
     setError("");
     try {
-      if (active) await updatePost.mutate({ id: active.id, title, markdown, tags });
-      else await createPost.mutate({ title, markdown, tags });
+      if (active) await updatePost.mutateAsync({ id: active.id, title, markdown, tags });
+      else await createPost.mutateAsync({ title, markdown, tags });
+      await refreshPosts();
       setEditing(false);
     } catch (e) { setError(e instanceof Error ? e.message : "Could not save draft."); }
   }
   async function submitDraft(post: any) {
     setError("");
-    try { await submitPost.mutate({ id: post.id }); }
+    try { await submitPost.mutateAsync({ id: post.id }); await refreshPosts(); }
     catch (e) { setError(e instanceof Error ? e.message : "Could not submit post."); }
   }
   async function publish(post: any) {
     setError("");
     try {
       const scheduledAt = schedule ? new Date(schedule).toISOString() : undefined;
-      await reviewPost.mutate({ id: post.id, ...(scheduledAt ? { scheduledAt } : {}) });
+      await reviewPost.mutateAsync({ id: post.id, ...(scheduledAt ? { scheduledAt } : {}) });
+      await refreshPosts();
       setSchedule("");
     } catch (e) { setError(e instanceof Error ? e.message : "Could not publish post."); }
   }
